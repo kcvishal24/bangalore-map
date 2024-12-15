@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Welcome to Bangalore City</title>
+    <style>
+        /* Basic styling for the body and html to reset margin and padding */
+        body, html { 
+            margin: 0; 
+            padding: 0; 
+            font-family: Arial, sans-serif; 
+            height: 100%; 
+            background-color: #f4f4f4; 
+        }
+
+        h1 { 
+            text-align: center; 
+            margin-top: 20px; 
+            font-size: 28px; 
+            color: #333; 
+        }
+
+        .container { 
+            display: flex; 
+            height: calc(100vh - 5cm); 
+        }
+
+        /* Styling for the form container */
+        #form-container {
+            width: 25%; 
+            padding: 20px;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            margin: 20px;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            height: calc(100% - 5px); 
+            align-items: center;
+            box-sizing: border-box;
+        }
+
+        #form-container label { font-size: 14px; margin-bottom: 5px; }
+        #form-container input { padding: 8px; margin-bottom: 10px; width: 80%; border: 1px solid #ddd; border-radius: 4px; text-align: center; }
+
+        /* Styling for the buttons section */
+        .form-buttons {
+            display: flex;
+            justify-content: space-evenly; 
+            width: 100%;
+            margin-top: 20px;
+        }
+
+        .form-buttons button {
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 0 10px;
+        }
+
+        #setRouteBtn { background-color: #4CAF50; color: white; border: none; }
+        #setRouteBtn:hover { background-color: #45a049; }
+
+        #selectBtn { background-color: #007BFF; color: white; border: none; }
+        #selectBtn:hover { background-color: #0056b3; }
+
+        #resetBtn { background-color: red; color: white; border: none; }
+        #resetBtn:hover { background-color: #d32f2f; }
+
+        /* Styling for the map container */
+        #map {
+            width: 75%; 
+            height: calc(100% - 5px); 
+            margin: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            box-sizing: border-box;
+        }
+
+        .text-info { font-size: 12px; color: #888; margin-top: 5px; }
+        .container { display: flex; justify-content: flex-start; }
+        .info-section { text-align: center; width: 100%; margin-top: 20px; }
+        .info-section p { margin: 5px 0; }
+    </style>    
+</head>
+<body>
+    <h1>Welcome to the Bengaluru City Map</h1>
+    <div class="container">
+        <!-- Form container for the inputs and buttons -->
+        <div id="form-container">
+            <label for="origin">Origin:</label>
+            <input type="text" id="origin" placeholder="Enter the Latitude, Longitude" />
+            <label for="destination">Destination:</label>
+            <input type="text" id="destination" placeholder="Enter the Latitude, Longitude" />
+            <div class="form-buttons">
+                <button id="setRouteBtn" onclick="updateRoute()">Set Route</button>
+                <button id="selectBtn" onclick="enableMapSelection()">Select on Map</button>
+                <button id="resetBtn" onclick="resetFields()">Reset</button>
+            </div>
+            <div class="info-section">
+                <p id="estimatedDurationText">Estimated Duration: </p>
+                <p id="totalDistanceText">Total Distance: </p>
+            </div>
+        </div>
+
+        <!-- Map container -->
+        <div id="map"></div>
+    </div>
+
+    <script>
+        let map;
+        let directionsService;
+        let directionsRenderer;
+        let isSelecting = false;
+        let originLatLng, destinationLatLng;
+        let routePath; // Store the polyline for the route
+        let markers = []; // Store all the markers for easy removal
+    
+        // Initialize the Map
+        function initMap() {
+            const options = {
+                center: { lat: 12.9716, lng: 77.5946 }, // Default set to the Bengaluru Location
+                zoom: 13,
+                restriction: {
+                    latLngBounds: {
+                        north: 13.2,
+                        south: 12.7,
+                        east: 78.1,
+                        west: 77.4
+                    },
+                    strictBounds: true,
+                },
+            };
+    
+            map = new google.maps.Map(document.getElementById('map'), options);
+            map.addListener('click', function (event) {
+                if (isSelecting) {
+                    if (!originLatLng) {
+                        originLatLng = event.latLng;
+                        document.getElementById('origin').value = `${originLatLng.lat()}, ${originLatLng.lng()}`;
+    
+                        // Add the blue marker for the first point
+                        addMarker(originLatLng, "Start", "https://maps.google.com/mapfiles/ms/icons/blue-dot.png");
+                    } else if (!destinationLatLng) {
+                        destinationLatLng = event.latLng;
+                        document.getElementById('destination').value = `${destinationLatLng.lat()}, ${destinationLatLng.lng()}`;
+    
+                        // Add the red marker for the second point
+                        addMarker(destinationLatLng, "End", "https://maps.google.com/mapfiles/ms/icons/red-dot.png");
+    
+                        isSelecting = false; // Stop the selection after both points are chosen
+                        updateRoute(); // Update the route after both points are selected
+                    }
+                }
+            });
+        }
+    
+        function enableMapSelection() {
+    isSelecting = true;
+    originLatLng = null;
+    destinationLatLng = null;
+    document.getElementById('originText').innerText = 'Origin: ';
+    document.getElementById('destinationText').innerText = 'Destination: ';
+    document.getElementById('estimatedDurationText').innerText = 'Estimated Duration: ';
+    document.getElementById('totalDistanceText').innerText = 'Total Distance: ';
+
+    // Clear the existing markers and route on the map
+    clearMapData();
+
+    // Disable the "Set Route" and enable "Select on Map"
+    document.getElementById('setRouteBtn').disabled = true;
+    document.getElementById('selectBtn').disabled = false;
+}
+ 
+        function updateRoute() {
+    const origin = document.getElementById('origin').value.trim();
+    const destination = document.getElementById('destination').value.trim();
+
+    if (!origin || !destination) {
+        alert('Please select both the Origin and Destination (Latitude, Longitude) before setting the route.');
+        return;
+    }
+
+    const payload = {
+        from: origin,
+        to: destination,
+    };
+
+    fetch('https://lynx-pure-bulldog.ngrok-free.app/get_shortest_path', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    })
+        .then(response => response.json())
+        .then(data => {
+            const estimatedDuration = data.estimated_duration || "N/A";
+            const totalDistance = data.total_distance || "N/A";
+            const pathCoords = data.path_coords || [];
+
+            document.getElementById('estimatedDurationText').innerText = `Estimated Duration: ${estimatedDuration}`;
+            document.getElementById('totalDistanceText').innerText = `Total Distance: ${totalDistance}`;
+
+            // Clear the existing markers and route polyline
+            clearMapData();
+
+            // Draw the polyline for the route
+            routePath = new google.maps.Polyline({
+                path: pathCoords.map(coord => ({ lat: coord[0], lng: coord[1] })),
+                geodesic: true,
+                strokeColor: '#0000FF',
+                strokeOpacity: 1.0,
+                strokeWeight: 5,
+            });
+            routePath.setMap(map);
+
+            // Add only 1 marker at the starting point (blue) and 1 marker at the ending point (red)
+            addMarker(routePath.getPath().getAt(0), "Start", "https://maps.google.com/mapfiles/ms/icons/blue-dot.png");
+            addMarker(routePath.getPath().getAt(routePath.getPath().getLength() - 1), "End", "https://maps.google.com/mapfiles/ms/icons/red-dot.png");
+
+            // Adjust the map bounds to fit the route
+            const bounds = new google.maps.LatLngBounds();
+            pathCoords.forEach(coord => bounds.extend(new google.maps.LatLng(coord[0], coord[1])));
+            map.fitBounds(bounds);
+
+            // Disable the "Select on Map" and enable "Set Route"
+            document.getElementById('selectBtn').disabled = true;
+            document.getElementById('setRouteBtn').disabled = false;
+        })
+        .catch(error => console.error('Error:', error));
+}
+function addMarker(position, title, icon) {
+    const marker = new google.maps.Marker({
+        position,
+        map,
+        title,
+        icon,
+    });
+    markers.push(marker); // Store the marker for future removal
+}
+
+    
+function clearMapData() {
+    // Remove all the markers
+    markers.forEach(marker => marker.setMap(null));
+    markers = [];
+
+    // Remove the route polyline
+    if (routePath) {
+        routePath.setMap(null);
+        routePath = null;
+    }
+}
+
+    
+        function resetFields() {
+            document.getElementById('setRouteBtn').disabled = false;
+            document.getElementById('selectBtn').disabled = false;
+
+            // Clear the input fields
+            document.getElementById('origin').value = '';
+            document.getElementById('destination').value = '';
+
+            // Reset the text fields
+            document.getElementById('estimatedDurationText').innerText = 'Estimated Duration: ';
+            document.getElementById('totalDistanceText').innerText = 'Total Distance: ';
+
+            // Reset the map data
+            clearMapData();
+
+            // Reset the selection state
+            isSelecting = false;
+            originLatLng = null;
+            destinationLatLng = null;
+
+            // Enable both the buttons when reset
+            document.getElementById('setRouteBtn').disabled = false;
+            document.getElementById('selectBtn').disabled = false;
+        }
+    </script>
+
+    <!-- Include Google Maps API (Replace with your own API key) -->
+    <script src="https://maps.googleapis.com/maps/api/js?key=&callback=initMap" async defer></script>
+</body>
+</html>
